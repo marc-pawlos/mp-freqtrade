@@ -1417,13 +1417,14 @@ class Backtesting:
             BacktestState.BACKTEST, int((end_date - start_date) / self.timeframe_td)
         )
         # Loop timerange and get candle for each pair at that point in time
+        list_of_pairs = list(data)
         while current_time <= end_date:
             open_trade_count_start = LocalTrade.bt_open_open_trade_count
             self.check_abort()
             strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
                 current_time=current_time
             )
-            for i, pair in enumerate(data):
+            for i, pair in enumerate(list_of_pairs):
                 row_index = indexes[pair]
                 row = self.validate_row(data, pair, row_index, current_time)
                 if not row:
