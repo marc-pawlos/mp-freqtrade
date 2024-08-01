@@ -37,7 +37,8 @@ from freqtrade.exchange import (
 )
 from freqtrade.exchange.exchange import Exchange
 from freqtrade.mixins import LoggingMixin
-from freqtrade.mp_extension.base_extension import modify_pairlist
+
+# from freqtrade.mp_extension.base_extension import modify_pairlist
 from freqtrade.optimize.backtest_caching import get_strategy_run_id
 from freqtrade.optimize.bt_progress import BTProgress
 from freqtrade.optimize.optimize_reports import (
@@ -83,7 +84,7 @@ ESHORT_IDX = 8  # Exit short
 ENTER_TAG_IDX = 9
 EXIT_TAG_IDX = 10
 
-# Every change to this headers list must evaluate further usages of the resulting tuple
+# Every change to this headers list must evaluate further usages of the resulting tuple,
 # and eventually change the constants for indexes at the top
 HEADERS = [
     "date",
@@ -1445,12 +1446,7 @@ class Backtesting:
         # (looping lists is a lot faster than pandas DataFrames)
 
         data: Dict = self._get_ohlcv_as_lists(processed)
-        # pair_priority_data: Dict = self._get_pair_priority_as_lists(processed)
-
-        # print (pair_priority_data)
-        # raise
-        # print (processed)
-
+        pair_priority_data: Dict = self._get_pair_priority_as_lists(processed)
         # Indexes per pair, so some pairs are allowed to have a missing start.
         indexes: Dict = defaultdict(int)
         current_time = start_date + self.timeframe_td
@@ -1466,7 +1462,8 @@ class Backtesting:
             strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
                 current_time=current_time
             )
-            list_of_pairs = modify_pairlist(list_of_pairs)
+            # list_of_pairs = modify_pairlist(list_of_pairs)
+            list_of_pairs = [_tmp_pair[0] for _tmp_pair in pair_priority_data[current_time]]
             for i, pair in enumerate(list_of_pairs):
                 row_index = indexes[pair]
                 row = self.validate_row(data, pair, row_index, current_time)
