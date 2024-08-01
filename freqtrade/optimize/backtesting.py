@@ -3,13 +3,13 @@
 """
 This module contains the backtesting logic
 """
-
 import logging
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
 from numpy import nan
 from pandas import DataFrame
 
@@ -37,6 +37,7 @@ from freqtrade.exchange import (
 )
 from freqtrade.exchange.exchange import Exchange
 from freqtrade.mixins import LoggingMixin
+from freqtrade.mp_extension.base_extension import modify_pairlist
 from freqtrade.optimize.backtest_caching import get_strategy_run_id
 from freqtrade.optimize.bt_progress import BTProgress
 from freqtrade.optimize.optimize_reports import (
@@ -1388,6 +1389,41 @@ class Backtesting:
                 self._process_exit_order(order, trade, current_time, row, pair)
         return open_trade_count_start
 
+    def _get_pair_priority_as_lists(self, processed: Dict[str, DataFrame]) -> Dict[str, Tuple]:
+        """
+        Helper function to convert a processed dataframes into lists for performance reasons.
+
+        Used by backtest() - so keep this optimized for performance.
+
+        :param processed: a processed dictionary with format {pair, data}, which gets cleared to
+        optimize memory usage!
+        """
+
+        result_dict: Dict = {}
+        # Create dict with data
+        all_dates = pd.concat([df['date'] for df in processed.values()]).unique()
+        result_df = pd.DataFrame({'date': all_dates})
+
+        # Dodawanie kolumn z 'pair_priority' dla każdego DataFrame z słownika
+        for key, df in processed.items():
+            result_df = result_df.merge(df[['date', 'pair_priority']], on='date', how='left')
+            result_df.rename(columns={'pair_priority': key}, inplace=True)
+
+        # Iterowanie przez wiersze DataFrame
+        columns_of_interest = result_df.columns[1:]
+        for index, row in result_df.iterrows():
+            # Pobieranie date z pierwszej kolumny
+            date = row['date']
+            # Tworzenie listy tupli (nazwa kolumny, wartość)
+            column_values = [
+                [col_name, row[col_name]] for col_name in columns_of_interest
+                if not pd.isna(row[col_name])
+            ]
+
+            # Przypisywanie listy tupli do odpowiedniej date
+            result_dict[date] = sorted(column_values, key=lambda x: x[1], reverse=True)
+        return result_dict
+
     def backtest(self, processed: Dict, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """
         Implement backtesting functionality
@@ -1407,7 +1443,13 @@ class Backtesting:
         self.wallets.update()
         # Use dict of lists with data for performance
         # (looping lists is a lot faster than pandas DataFrames)
+
         data: Dict = self._get_ohlcv_as_lists(processed)
+        # pair_priority_data: Dict = self._get_pair_priority_as_lists(processed)
+
+        # print (pair_priority_data)
+        # raise
+        # print (processed)
 
         # Indexes per pair, so some pairs are allowed to have a missing start.
         indexes: Dict = defaultdict(int)
@@ -1424,12 +1466,12 @@ class Backtesting:
             strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
                 current_time=current_time
             )
+            list_of_pairs = modify_pairlist(list_of_pairs)
             for i, pair in enumerate(list_of_pairs):
                 row_index = indexes[pair]
                 row = self.validate_row(data, pair, row_index, current_time)
                 if not row:
                     continue
-
                 row_index += 1
                 indexes[pair] = row_index
                 self.dataprovider._set_dataframe_max_index(self.required_startup + row_index)
